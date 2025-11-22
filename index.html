@@ -28,9 +28,17 @@
       <div class="layout">
         <section class="card data-panel">
           <div class="panel-header">
+            <h2>都道府県を選択</h2>
+            <p> 表示する都道府県の地図を切り替えます。 </p>
+          </div>
+          <div class="field-group">
+            <label class="form-label" for="map-select">都道府県</label>
+            <select id="map-select" class="form-select" aria-label="都道府県を選択"></select>
+          </div>
+          <div class="panel-header">
             <h2>データ管理</h2>
             <p>
-              CSV の「都道府県」列をキーとして利用し、他の列を指標として利用します。アップロード後に内容を確認してからマップに適用できます。
+              CSV のキー列（選択した地図の名称列）を基準に、他の列を指標として利用します。アップロード後に内容を確認してからマップに適用できます。
             </p>
           </div>
 
@@ -57,16 +65,16 @@
           <div class="tab-content" id="data-tab-content">
             <div class="tab-pane fade show active" id="sample-pane" role="tabpanel" aria-labelledby="sample-tab">
             <div class="field-group">
-              <h3>サンプルデータ</h3>
-              <p class="info-note">
-                初期表示ではサンプルデータ（SSDSE-C の果物支出）を読み込んでいます。<br /><br />
-                出典：<a href="https://www.nstac.go.jp/use/literacy/SSDSE/" target="_blank">独立行政法人 統計センター SSDSE-C-2025</a>を加工して作成。<br /><br />データは2025年4月25日公開。
-              </p>
-              <div class="button-row wrap">
-                <a class="btn btn-secondary" id="download-sample" href="data/theme.csv" download>ダウンロード</a>
-                <button class="btn btn-secondary" id="download-data-csv" type="button">CSVダウンロード</button>
-                <button class="btn btn-tertiary" id="reset-data" type="button">サンプルに戻す</button>
-              </div>
+            <h3>サンプルデータ</h3>
+            <p class="info-note">
+              初期表示では、選択中の地図に合わせたダミーのサンプルデータを自動生成します。あとで自由に差し替え可能です。
+            </p>
+            <div id="sample-data-preview" class="data-preview"></div>
+            <div class="button-row wrap">
+              <button class="btn btn-secondary" id="download-sample" type="button">ダウンロード</button>
+              <button class="btn btn-secondary" id="download-data-csv" type="button">CSVダウンロード</button>
+              <button class="btn btn-tertiary" id="reset-data" type="button">サンプルに戻す</button>
+            </div>
             </div>
             </div>
 

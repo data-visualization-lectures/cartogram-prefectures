@@ -8,10 +8,15 @@ if (!document.createElementNS) {
 }
 
 var KEY_COLUMN = "都道府県",
-    MAX_FILE_SIZE = 2 * 1024 * 1024,
-    PREVIEW_ROW_COUNT = 6,
-    CURRENT_PREVIEW_ROW_COUNT = 12,
-    DEFAULT_COLOR_SCHEME_ID = "blues";
+  MAX_FILE_SIZE = 2 * 1024 * 1024,
+  PREVIEW_ROW_COUNT = 6,
+  CURRENT_PREVIEW_ROW_COUNT = 12,
+  DEFAULT_COLOR_SCHEME_ID = "blues",
+  DEFAULT_OBJECT_NAME = "japan",
+  PREF_INDEX_URL = "data/prefectures/index.json";
+
+var MAP_OPTIONS = [{
+}];
 
 var RANKING_SUFFIX = " ランキング";
 var COLOR_SCHEME_GROUPS = [
@@ -52,47 +57,121 @@ var COLOR_SCHEME_GROUPS = [
 
 var COLOR_SCHEMES = [];
 
+// ラベルは自治体名（nam_ja / N03_004）を最優先で拾う。無い場合のフォールバックとしてコード列を使う。
+var DEFAULT_LABEL_PROPS = ["nam_ja", "N03_004", "N03_007", "N03_001"];
+
+function buildMapOptionIndex(options) {
+  var map = d3.map();
+  options.forEach(function (option) {
+    map.set(option.id, option);
+  });
+  return map;
+}
+
+function transformPrefIndexToOptions(items) {
+  return (items || []).map(function (item) {
+    return {
+      id: item.id,
+      name: item.name,
+      path: "data/prefectures/" + item.id + ".topojson",
+      type: "topojson",
+      objectName: "data",
+      keyLabel: "市区町村",
+      labelProps: ["nam_ja", "N03_004", "N03_007", "N03_001"]
+    };
+  });
+}
+
+function renderMapSelect(options) {
+  var entries = mapSelect.selectAll("option")
+    .data(options, function (d) { return d.id; });
+
+  entries.exit().remove();
+
+  entries.enter()
+    .append("option")
+    .merge(entries)
+    .attr("value", function (d) { return d.id; })
+    .text(function (d) { return d.name; });
+
+  mapSelect.property("value", currentMap.id);
+}
+
+function setKeyColumn(name) {
+  KEY_COLUMN = name || "地域名";
+  mapKeyHint.text("キー列：" + KEY_COLUMN);
+}
+
+function getLabelFromProperties(properties, labelProps) {
+  var props = properties || {};
+  var candidates = (labelProps && labelProps.length ? labelProps : DEFAULT_LABEL_PROPS);
+  for (var i = 0; i < candidates.length; i++) {
+    var value = props[candidates[i]];
+    if (value !== null && value !== undefined && value !== "") {
+      return value;
+    }
+  }
+  return null;
+}
+
+function getFeatureLabel(feature) {
+  var props = feature && feature.properties;
+  var labelProps = (currentMap && currentMap.labelProps) || DEFAULT_LABEL_PROPS;
+  // CSVデータ（carto.features由来）の場合は KEY_COLUMN がプロパティのキーになっているため、候補に加える
+  var candidates = labelProps.concat([KEY_COLUMN]);
+  var label = getLabelFromProperties(props, candidates);
+  return label || "";
+}
+
 var fields = [],
-    fieldsById = d3.map(),
-    field = null,
-    rawData,
-    pendingDataset = null,
-    originalData = null,
-    isInitialized = false,
-    currentColorScheme = null,
-    currentLegendCells = 5,
-    legendUnit = "",
-    legendUnitCache = "",
-    currentMode = "value",
-    currentLegendBoundaries = null;
+  fieldsById = d3.map(),
+  field = null,
+  rawData,
+  pendingDataset = null,
+  originalData = null,
+  mapOptionsById = d3.map(),
+  currentMap = MAP_OPTIONS[0],
+  isMapLoading = false,
+  isInitialized = false,
+  currentColorScheme = null,
+  currentLegendCells = 5,
+  legendUnit = "",
+  legendUnitCache = "",
+  currentMode = "value",
+  currentLegendBoundaries = null;
 
 var body = d3.select("body"),
-    stat = d3.select("#status");
+  stat = d3.select("#status");
+
+var mapSelect = d3.select("#map-select"),
+  mapKeyHint = d3.select("#map-key-hint");
 
 var fileInput = d3.select("#file-input"),
-    dropzone = d3.select("#dropzone"),
-    uploadStatus = d3.select("#upload-status"),
-    preview = d3.select("#preview"),
-    previewTable = d3.select("#preview-table"),
-    previewStats = d3.select("#preview-stats"),
-    applyButton = d3.select("#apply-data"),
-    resetButton = d3.select("#reset-data"),
-    currentDataLabel = d3.select("#current-data-label"),
-    currentDataPreview = d3.select("#current-data-preview"),
-    toggleCurrentPreviewButton = d3.select("#toggle-current-preview"),
-    downloadSvgButton = d3.select("#download-svg-btn"),
-    downloadPngButton = d3.select("#download-png-btn"),
-    colorSchemeSelect = d3.select("#color-scheme"),
-    legendCellsSelect = d3.select("#legend-cells"),
-    legendUnitInput = d3.select("#legend-unit"),
-    displayModeSelect = d3.select("#display-mode"),
-    downloadDataButton = d3.select("#download-data-csv");
+  dropzone = d3.select("#dropzone"),
+  uploadStatus = d3.select("#upload-status"),
+  preview = d3.select("#preview"),
+  previewTable = d3.select("#preview-table"),
+  sampleDataPreview = d3.select("#sample-data-preview"),
+  previewStats = d3.select("#preview-stats"),
+  applyButton = d3.select("#apply-data"),
+  resetButton = d3.select("#reset-data"),
+  currentDataLabel = d3.select("#current-data-label"),
+  currentDataPreview = d3.select("#current-data-preview"),
+  toggleCurrentPreviewButton = d3.select("#toggle-current-preview"),
+  downloadSvgButton = d3.select("#download-svg-btn"),
+  downloadPngButton = d3.select("#download-png-btn"),
+  colorSchemeSelect = d3.select("#color-scheme"),
+  legendCellsSelect = d3.select("#legend-cells"),
+  legendUnitInput = d3.select("#legend-unit"),
+  displayModeSelect = d3.select("#display-mode"),
+  downloadDataButton = d3.select("#download-data-csv"),
+  downloadSampleButton = d3.select("#download-sample");
 
 var applyButtonDefaultText = applyButton.text(),
-    applyButtonAppliedText = "適用済み";
+  applyButtonAppliedText = "適用済み";
 
 var currentPreviewVisible = true,
-    currentDatasetName = "サンプルデータ";
+  currentDatasetName = "サンプルデータ";
 
 function resetFileInputValue() {
   var node = fileInput.node();
@@ -121,7 +200,7 @@ function shouldBypassDropzoneClick(event) {
 }
 
 function getVisibleColorGroups() {
-  return COLOR_SCHEME_GROUPS.filter(function(group) {
+  return COLOR_SCHEME_GROUPS.filter(function (group) {
     return currentMode === "ranking" ? group.type === "diverging" : group.type === "sequential";
   });
 }
@@ -131,21 +210,21 @@ function initializeColorSchemeOptions() {
   COLOR_SCHEMES = [];
 
   var groups = getVisibleColorGroups();
-  groups.forEach(function(group) {
+  groups.forEach(function (group) {
     var optgroup = colorSchemeSelect.append("optgroup")
       .attr("label", group.label);
 
     optgroup.selectAll("option")
-      .data(group.schemes, function(d) { return d.id; })
+      .data(group.schemes, function (d) { return d.id; })
       .enter()
       .append("option")
-        .attr("value", function(d) { return d.id; })
-        .text(function(d) { return d.name; });
+      .attr("value", function (d) { return d.id; })
+      .text(function (d) { return d.name; });
 
     COLOR_SCHEMES = COLOR_SCHEMES.concat(group.schemes);
   });
 
-  colorSchemeSelect.on("change", function() {
+  colorSchemeSelect.on("change", function () {
     setColorScheme(this.value);
   });
 
@@ -213,8 +292,10 @@ function getColorSchemeById(id) {
 }
 
 var fieldSelect = d3.select("#field")
-  .on("change", function() {
-    field = fields[this.selectedIndex];
+  .on("change", function () {
+    var selectedId = this.value;
+    var nextField = fieldsById.get(selectedId) || fields[this.selectedIndex] || fields[0];
+    field = nextField;
     if (field && field.id !== "none") {
       legendCellsSelect.property("disabled", false);
       colorSchemeSelect.property("disabled", false);
@@ -224,20 +305,20 @@ var fieldSelect = d3.select("#field")
     updateFieldSelection();
   });
 
-displayModeSelect.on("change", function() {
+displayModeSelect.on("change", function () {
   setDisplayMode(this.value);
 });
 
 setDisplayMode(currentMode);
 
-legendCellsSelect.on("change", function() {
+legendCellsSelect.on("change", function () {
   currentLegendCells = +this.value;
   if (field && field.id !== "none") {
     deferredUpdate();
   }
 });
 
-legendUnitInput.on("input", function() {
+legendUnitInput.on("input", function () {
   legendUnit = (this.value || "").trim();
   if (currentMode === "value") {
     legendUnitCache = legendUnit;
@@ -250,7 +331,7 @@ legendUnitInput.on("input", function() {
 function updateLegendCellsOptions() {
   var isRanking = currentMode === "ranking";
   var oddDefault = null;
-  legendCellsSelect.selectAll("option").each(function() {
+  legendCellsSelect.selectAll("option").each(function () {
     var option = d3.select(this);
     var value = +option.attr("value");
     var isOdd = value % 2 === 1;
@@ -280,7 +361,7 @@ applyButton.text(applyButtonDefaultText);
 setCurrentDataPreviewDefault();
 setUploadStatus("CSV ファイル（UTF-8）をアップロードしてカルトグラムをカスタマイズできます。", "info");
 
-fileInput.on("change", function() {
+fileInput.on("change", function () {
   var file = this.files && this.files[0];
   if (file) {
     handleFileUpload(file);
@@ -289,14 +370,14 @@ fileInput.on("change", function() {
 });
 
 dropzone
-  .on("dragover", function() {
+  .on("dragover", function () {
     d3.event.preventDefault();
     dropzone.classed("dragover", true);
   })
-  .on("dragleave", function() {
+  .on("dragleave", function () {
     dropzone.classed("dragover", false);
   })
-  .on("drop", function() {
+  .on("drop", function () {
     d3.event.preventDefault();
     dropzone.classed("dragover", false);
     var event = d3.event;
@@ -305,7 +386,7 @@ dropzone
       handleFileUpload(file);
     }
   })
-  .on("click", function() {
+  .on("click", function () {
     var event = d3.event;
     if (shouldBypassDropzoneClick(event)) {
       return;
@@ -313,7 +394,7 @@ dropzone
     fileInput.node().click();
   });
 
-toggleCurrentPreviewButton.on("click", function() {
+toggleCurrentPreviewButton.on("click", function () {
   currentPreviewVisible = !currentPreviewVisible;
   toggleCurrentPreviewButton.text(currentPreviewVisible ? "表データを隠す" : "表データを表示");
   currentDataPreview.classed("is-hidden", !currentPreviewVisible);
@@ -325,69 +406,273 @@ toggleCurrentPreviewButton.on("click", function() {
 downloadSvgButton.on("click", downloadCurrentSvg);
 downloadPngButton.on("click", downloadCurrentPng);
 downloadDataButton.on("click", downloadCurrentDatasetCsv);
+downloadSampleButton.on("click", downloadSampleDataset);
 
 applyButton.on("click", applyPendingData);
 resetButton.on("click", resetToSampleData);
 
 
 var map = d3.select("#map"),
-    layer = map.append("g")
-          .attr("id", "layer"),
-    states = layer.append("g")
-      .attr("id", "states")
-      .selectAll("path"),
-    legendGroup = map.append("g")
-      .attr("id", "legend")
-      .attr("transform", "translate(520, 660)");
+  layer = map.append("g")
+    .attr("id", "layer"),
+  states = layer.append("g")
+    .attr("id", "states")
+    .selectAll("path"),
+  legendGroup = map.append("g")
+    .attr("id", "legend")
+    .attr("transform", "translate(520, 660)");
 
 
 var proj = d3.geoMercator()
-    .center([138, 36])
-    .scale(1450)
-    .translate([400, 400]),
-    topology,
-    geometries,
-    dataById = {},
-    carto = d3.cartogram()
-      .projection(proj)
-      .properties(function(d) {
-        return dataById.get(d.properties.nam_ja);
-      })
-      .value(function(d) {
-        return field && field.key ? +d.properties[field.key] : 1;
-      });
+  .center([138, 36])
+  .scale(1450)
+  .translate([400, 400]),
+  topology,
+  geometries,
+  dataById = d3.map(),
+  carto = d3.cartogram()
+    .projection(proj)
+    .properties(function (d) {
+      return dataById.get(getFeatureLabel(d)) || {};
+    })
+    .value(function (d) {
+      return field && field.key ? +d.properties[field.key] : 1;
+    });
 
-d3.json("data/japan.topojson", function(topo) {
-  topology = topo;
-  geometries = topology.objects.japan.geometries;
-  d3.csv("data/theme.csv", function(data) {
-    augmentWithRankings(data);
-    originalData = cloneDataset(data);
-    loadDataset(cloneDataset(data), {
-      deferRender: true,
-      label: "サンプルデータ",
+function loadMapOptions() {
+  d3.json(PREF_INDEX_URL, function (error, data) {
+    var prefOptions = (!error && data && data.length) ? transformPrefIndexToOptions(data) : [];
+    MAP_OPTIONS = prefOptions;
+    mapOptionsById = buildMapOptionIndex(MAP_OPTIONS);
+    renderMapSelect(MAP_OPTIONS);
+    mapSelect.on("change", function () {
+      changeMap(this.value);
+    });
+    changeMap(currentMap.id, { silent: true });
+  });
+}
+
+function changeMap(mapId, options) {
+  options = options || {};
+  if (isMapLoading) {
+    return;
+  }
+  var nextMap = mapOptionsById && mapOptionsById.get(mapId);
+  if (!nextMap && MAP_OPTIONS.length) {
+    nextMap = MAP_OPTIONS[0];
+  }
+  currentMap = nextMap;
+  mapSelect.property("value", currentMap.id);
+  setKeyColumn(currentMap.keyLabel || "地域名");
+  stat.text("地図を読み込み中...").classed("empty", false);
+  isMapLoading = true;
+
+  fetchTopologyForMap(currentMap, function (err, result) {
+    isMapLoading = false;
+    if (err || !result) {
+      console.error(err || new Error("topology missing"));
+      stat.text("地図の読み込みに失敗しました。").classed("empty", false);
+      return;
+    }
+    topology = result.topology;
+    geometries = result.geometries;
+    currentMap.objectName = result.objectName || currentMap.objectName;
+
+    updateProjectionForCurrentTopology();
+    applySampleDatasetForCurrentMap(options);
+  });
+}
+
+function fetchTopologyForMap(option, callback) {
+  d3.json(option.path, function (error, data) {
+    if (error || !data) {
+      callback(error || new Error("データが読み込めません。"));
+      return;
+    }
+    var topo = data;
+    var objectName = option.objectName || DEFAULT_OBJECT_NAME;
+    if (option.type === "geojson") {
+      topo = topojson.topology({ pref: data }, 1e5);
+      objectName = "pref";
+    }
+    if (!topo.objects || !topo.objects[objectName]) {
+      objectName = topo.objects ? Object.keys(topo.objects)[0] : null;
+    }
+    var obj = objectName && topo.objects ? topo.objects[objectName] : null;
+    var geoms = obj && obj.geometries ? obj.geometries : null;
+    if (!geoms) {
+      callback(new Error("地図ジオメトリが見つかりません。"));
+      return;
+    }
+    callback(null, {
+      topology: topo,
+      geometries: geoms,
+      objectName: objectName
+    });
+  });
+}
+
+function updateProjectionForCurrentTopology() {
+  if (!(topology && geometries)) {
+    return;
+  }
+  var featureCollection = topojson.feature(topology, {
+    type: "GeometryCollection",
+    geometries: geometries
+  });
+  var nextProj = d3.geoMercator();
+  if (featureCollection && featureCollection.features && featureCollection.features.length) {
+    nextProj.fitExtent([[40, 40], [760, 760]], featureCollection);
+  } else {
+    nextProj
+      .center([138, 36])
+      .scale(1450)
+      .translate([400, 400]);
+  }
+  proj = nextProj;
+  carto.projection(proj);
+}
+
+function redrawMapBase() {
+  if (!(topology && geometries)) {
+    return;
+  }
+  var features = carto.features(topology, geometries),
+    path = d3.geoPath()
+      .projection(proj);
+
+  states = states.data(features, function (d) {
+    return getFeatureLabel(d);
+  });
+
+  states.exit().remove();
+
+  var stateEnter = states.enter()
+    .append("path")
+    .attr("class", "state")
+    .attr("fill", "#fafafa");
+
+  stateEnter.append("title");
+
+  states = stateEnter.merge(states)
+    .attr("id", function (d) {
+      return slugify(getFeatureLabel(d));
+    })
+    .attr("d", path)
+    .attr("fill", "#fafafa");
+
+  states.select("title")
+    .text(function (d) {
+      return getFeatureLabel(d);
+    });
+}
+
+function getCurrentFeatureLabels() {
+  if (!(topology && geometries)) {
+    return [];
+  }
+  var features = topojson.feature(topology, {
+    type: "GeometryCollection",
+    geometries: geometries
+  }).features || [];
+  var seen = d3.map();
+  var labels = [];
+  features.forEach(function (f) {
+    var label = getFeatureLabel(f);
+    if (label && !seen.get(label)) {
+      seen.set(label, true);
+      labels.push(label);
+    }
+  });
+  return labels;
+}
+
+function generateSampleDataset(labels) {
+  labels = labels || [];
+  var base = [];
+  labels.forEach(function (label, index) {
+    var seed = index + 1;
+    var valueA = 100 + (seed * 13 % 900);
+    var valueB = 50 + (seed * 17 % 700);
+    base.push((function () {
+      var row = {};
+      row[KEY_COLUMN] = label;
+      row["サンプル値A"] = valueA;
+      row["サンプル値B"] = valueB;
+      return row;
+    })());
+  });
+  return base;
+}
+
+function applySampleDatasetForCurrentMap(options) {
+  options = options || {};
+  redrawMapBase(); // ensure features are bound before extracting labels
+
+  fetchPrefectureSample(function (err, dataset) {
+    var labels;
+    var isFromFile = false;
+    if (!err && dataset && dataset.length) {
+      isFromFile = true;
+      labels = dataset.map(function (row) { return row[KEY_COLUMN]; }).filter(Boolean);
+    } else {
+      labels = getCurrentFeatureLabels();
+      if (!labels.length) {
+        stat.text("地図データから地名を取得できませんでした。").classed("empty", false);
+        return;
+      }
+      dataset = generateSampleDataset(labels);
+    }
+
+    originalData = cloneDataset(dataset);
+    pendingDataset = null;
+    isInitialized = true;
+
+    loadDataset(cloneDataset(dataset), {
+      deferRender: false,
+      label: currentMap.name + " サンプルデータ",
       isSample: true,
       defaultToNone: true,
       preserveField: false
     });
-    init();
+
+    redrawMapBase(); // inject dataset into feature properties
+    clearPreview();
+    setCurrentDataPreviewDefault();
+    renderSampleDataPreview(rawData, currentMap.name + " サンプルデータ");
+    if (!options.silent) {
+      var note = isFromFile ? "地図用サンプルCSVを読み込みました。" : "地図に合わせてサンプルを生成しました。";
+      stat.text(note).classed("empty", true);
+    } else {
+      stat.text("").classed("empty", true);
+    }
   });
-});
+}
+
+function fetchPrefectureSample(callback) {
+  var csvPath = "data/theme/" + currentMap.id + ".csv";
+  d3.csv(csvPath, function (error, data) {
+    if (error || !data || !data.length) {
+      return callback(error || new Error("csv not found"));
+    }
+    callback(null, data);
+  });
+}
 
 function init() {
   var features = carto.features(topology, geometries),
-      path = d3.geoPath()
-        .projection(proj);
+    path = d3.geoPath()
+      .projection(proj);
 
   states = states.data(features)
     .enter()
     .append("path")
-      .attr("class", "state")
-      .attr("id", function(d) {
-        return d.properties.nam_ja;
-      })
-      .attr("fill", "#fafafa")
-      .attr("d", path);
+    .attr("class", "state")
+    .attr("id", function (d) {
+      return getFeatureLabel(d);
+    })
+    .attr("fill", "#fafafa")
+    .attr("d", path);
 
   states.append("title");
 
@@ -401,38 +686,63 @@ function reset() {
   body.classed("updating", false);
   clearLegend();
 
+  // 指標未選択時は変形しない素の形状を描画する
+  // 指標未選択時は変形しない素の形状を描画する
+  carto.value(function () { return 1; });
+
   var features = carto.features(topology, geometries),
-      path = d3.geoPath()
-        .projection(proj);
+    path = d3.geoPath()
+      .projection(proj);
 
   states.data(features)
     .transition()
-      .duration(750)
-      .ease(d3.easeLinear)
-      .attr("fill", "#fafafa")
-      .attr("d", path);
+    .duration(750)
+    .ease(d3.easeLinear)
+    .attr("fill", "#fafafa")
+    .attr("d", path);
 
   states.select("title")
-    .text(function(d) {
-      return d.properties.nam_ja;
+    .text(function (d) {
+      return getFeatureLabel(d);
     });
 }
 
 function update() {
+
   var start = Date.now();
   body.classed("updating", true);
 
+  // 指標未選択の場合は変形も着色もしない白地図に戻す
+  if (!field || field.id === "none") {
+    reset();
+    return;
+  }
+
   var key = field.key,
-      fmt = d3.format(","),
-      value = function(d) {
-        return +d.properties[key];
-      },
-      values = states.data()
-        .map(value)
-        .filter(function(n) {
-          return !isNaN(n);
-        })
-        .sort(d3.ascending);
+    fmt = d3.format(","),
+    value = function (d) {
+      var label = getFeatureLabel(d);
+      var row = (dataById && label) ? dataById.get(label) : null;
+      var fromDataMap = row && row[key];
+      var fromProps = d && d.properties ? d.properties[key] : null;
+      var v = (fromDataMap !== undefined && fromDataMap !== null && fromDataMap !== "") ? fromDataMap : fromProps;
+      return v === undefined || v === null || v === "" ? NaN : +v;
+    };
+
+  // 値集合は原データ優先で集計し、無ければ地物から拾う
+  var values = (rawData || [])
+    .map(function (row) { return row ? +row[key] : NaN; })
+    .filter(function (n) { return !isNaN(n); });
+
+  if (!values.length) {
+    values = states.data()
+      .map(value)
+      .filter(function (n) {
+        return !isNaN(n);
+      });
+  }
+
+  values = values.sort(d3.ascending);
 
   if (!values.length) {
     stat.text("有効な数値が見つかりません。");
@@ -441,7 +751,7 @@ function update() {
   }
 
   var lo = values[0],
-      hi = values[values.length - 1];
+    hi = values[values.length - 1];
 
   var colorInterpolator = (currentColorScheme && currentColorScheme.interpolator) || d3.interpolateBlues;
   var legendMin = lo;
@@ -473,7 +783,7 @@ function update() {
     .range([1, 1000]);
 
   // tell the cartogram to use the scaled values
-  carto.value(function(d) {
+  carto.value(function (d) {
     var currentValue = value(d);
     if (isNaN(currentValue)) {
       return 1;
@@ -484,25 +794,43 @@ function update() {
   // generate the new features, pre-projected
   var features = carto(topology, geometries).features;
 
-  // update the data
-  states.data(features)
-    .select("title")
-      .text(function(d) {
-        var originalValue = value(d);
-        var displayValue = isNaN(originalValue) ? "データなし" : fmt(originalValue);
-        return [d.properties.nam_ja, displayValue].join(": ");
-      });
+  // キー付きでパスを再バインド（ラベルをキーにする）
+  var joined = states.data(features, function (d) {
+    return getFeatureLabel(d);
+  });
 
-  states.transition()
+  var entered = joined.enter()
+    .append("path")
+    .attr("class", "state")
+    .attr("fill", "#fafafa");
+
+  // title 要素を確保
+  entered.append("title");
+
+  // enter + update をマージ
+  joined = entered.merge(joined);
+
+  // title 更新
+  joined.select("title")
+    .text(function (d) {
+      var originalValue = value(d);
+      var displayValue = isNaN(originalValue) ? "データなし" : fmt(originalValue);
+      return [getFeatureLabel(d), displayValue].join(": ");
+    });
+
+  joined.transition()
     .duration(750)
     .ease(d3.easeLinear)
-    .attr("fill", function(d) {
+    .attr("fill", function (d) {
       var rawValue = value(d);
       var colorValue = currentMode === "ranking" ? getRankingValue(d) : rawValue;
       return isNaN(colorValue) ? "#f0f0f0" : color(colorValue);
     })
     .attr("d", carto.path);
-  
+
+  // 最新の selection を保持
+  states = joined;
+
   renderLegend(color, legendMin, legendMax, currentLegendBoundaries);
 
   var delta = (Date.now() - start) / 1000;
@@ -555,23 +883,28 @@ function getRankingColumnKey(column) {
 }
 
 function getRankingValue(feature) {
-  if (!feature || !feature.properties || !field || !field.key) {
+  if (!feature || !field || !field.key) {
     return NaN;
   }
-  var value = feature.properties[getRankingColumnKey(field.key)];
+
+  var label = getFeatureLabel(feature);
+  var row = (dataById && label) ? dataById.get(label) : null;
+  var props = (feature && feature.properties) || {};
+  var value = row ? row[getRankingColumnKey(field.key)] : props[getRankingColumnKey(field.key)];
+
   if (value === undefined || value === null || value === "") {
     return NaN;
   }
   return +value;
 }
 
-var deferredUpdate = (function() {
+var deferredUpdate = (function () {
   var timeout;
-  return function() {
+  return function () {
     var args = arguments;
     clearTimeout(timeout);
     stat.text("calculating...");
-    return timeout = setTimeout(function() {
+    return timeout = setTimeout(function () {
       update.apply(null, arguments);
     }, 10);
   };
@@ -604,10 +937,11 @@ function loadDataset(data, options) {
   var dataset = data || [];
   augmentWithRankings(dataset);
   rawData = dataset;
-  dataById = d3.nest()
-    .key(function(d) { return d[KEY_COLUMN]; })
-    .rollup(function(d) { return d[0]; })
-    .map(rawData);
+  dataById = buildDataIndex(rawData);
+  // マップ側のジオメトリに最新データを反映させる
+  applyDataToGeometries();
+  syncDataIntoStates();
+
 
   var nextFields = buildFieldsFromData(rawData);
   fields = nextFields;
@@ -619,11 +953,15 @@ function loadDataset(data, options) {
   refreshFieldOptions();
   updateCurrentDatasetLabel(options.label || "カスタムデータ", options.isSample);
   renderCurrentDataPreview();
+  renderSampleDataPreview(rawData, options.label || currentDatasetName);
 
   stat.text("");
   stat.classed("empty", true);
 
   if (field && isInitialized && !options.deferRender) {
+    updateFieldSelection();
+  } else if (field && !options.deferRender) {
+    // 初回初期化前でも描画を走らせる
     updateFieldSelection();
   }
 }
@@ -640,7 +978,7 @@ function buildFieldsFromData(data) {
 
   var numericColumns = getNumericColumns(data);
 
-  numericColumns.forEach(function(header, index) {
+  numericColumns.forEach(function (header, index) {
     var baseId = header.toLowerCase().replace(/[^a-z0-9]/g, "_") || ("field_" + index);
     var uniqueId = baseId + "_" + index;
     availableFields.push({
@@ -655,27 +993,84 @@ function buildFieldsFromData(data) {
 
 function buildFieldIndex(items) {
   var map = d3.map();
-  items.forEach(function(item) {
+  items.forEach(function (item) {
     map.set(item.id, item);
   });
   return map;
 }
 
+function buildDataIndex(data) {
+  var map = d3.map();
+  (data || []).forEach(function (row) {
+    var key = row && row[KEY_COLUMN];
+    if (key !== undefined && key !== null && key !== "") {
+      map.set(key, row);
+    }
+  });
+  return map;
+}
+
+function applyDataToGeometries() {
+  if (!geometries || !geometries.length || !dataById || !dataById.size()) {
+    return;
+  }
+  geometries.forEach(function (geom) {
+    if (!geom || !geom.properties) {
+      return;
+    }
+    var label = getFeatureLabel({ properties: geom.properties }) || geom.properties[KEY_COLUMN];
+    var row = label ? dataById.get(label) : null;
+    if (row) {
+      // 既存プロパティを保ちつつデータ行をマージ
+      geom.properties = Object.assign({}, geom.properties, row);
+    }
+  });
+}
+
+// 既にバインド済みの state データにも最新の行データをマージする
+function syncDataIntoStates() {
+  if (!states || !dataById || !dataById.size()) {
+    return;
+  }
+  states.each(function (d) {
+    var label = getFeatureLabel(d);
+    var row = label ? dataById.get(label) : null;
+    if (row && d && d.properties) {
+      d.properties = Object.assign({}, d.properties, row);
+    }
+  });
+}
+
 function refreshFieldOptions() {
   var options = fieldSelect.selectAll("option")
-    .data(fields, function(d) { return d.id; });
+    .data(fields, function (d) { return d.id; });
 
   options.exit().remove();
 
   options.enter()
     .append("option")
     .merge(options)
-      .attr("value", function(d) { return d.id; })
-      .text(function(d) { return d.name; });
+    .attr("value", function (d) { return d.id; })
+    .text(function (d) { return d.name; });
 
   if (fields.length) {
     fieldSelect.property("selectedIndex", Math.max(fields.indexOf(field), 0));
   }
+}
+
+function getFieldStats(data, key) {
+  if (!data || !data.length || !key) {
+    return { min: null, max: null, distinct: 0 };
+  }
+  var values = data
+    .map(function (row) { return row ? +row[key] : NaN; })
+    .filter(function (n) { return !isNaN(n); });
+  var distinct = d3.set(values).values().length;
+  return {
+    min: values.length ? d3.min(values) : null,
+    max: values.length ? d3.max(values) : null,
+    distinct: distinct
+  };
 }
 
 function getNumericColumns(data) {
@@ -683,12 +1078,12 @@ function getNumericColumns(data) {
     return [];
   }
 
-  var headers = Object.keys(data[0]).filter(function(header) {
+  var headers = Object.keys(data[0]).filter(function (header) {
     return header !== KEY_COLUMN && !hasRankingSuffix(header);
   });
 
-  return headers.filter(function(header) {
-    return data.some(function(row) {
+  return headers.filter(function (header) {
+    return data.some(function (row) {
       var value = row[header];
       return value !== undefined && value !== null && value !== "" && !isNaN(+value);
     });
@@ -715,7 +1110,7 @@ function handleFileUpload(file) {
   setUploadStatus("「" + file.name + "」を読み込み中...", "info");
 
   var reader = new FileReader();
-  reader.onload = function(evt) {
+  reader.onload = function (evt) {
     try {
       var text = (evt.target.result || "").trim();
       var parsed = d3.csvParse(text);
@@ -727,7 +1122,7 @@ function handleFileUpload(file) {
     }
   };
 
-  reader.onerror = function() {
+  reader.onerror = function () {
     setUploadStatus("ファイルの読み込みに失敗しました。", "danger");
     clearPreview();
   };
@@ -798,7 +1193,7 @@ function renderPreviewTable(data) {
   renderTableInto(previewTable, data, {
     rowCount: PREVIEW_ROW_COUNT,
     emptyMessage: "プレビューできる行がありません。",
-    note: function(shownRows, totalRows) {
+    note: function (shownRows, totalRows) {
       return "先頭 " + shownRows + " 行を表示しています（全 " + totalRows + " 行）。";
     }
   });
@@ -812,10 +1207,10 @@ function renderPreviewStats(data, numericColumns) {
 
   var fmt = d3.format(",.2f");
 
-  var statsHtml = numericColumns.map(function(column) {
+  var statsHtml = numericColumns.map(function (column) {
     var values = data
-      .map(function(row) { return +row[column]; })
-      .filter(function(value) { return !isNaN(value); });
+      .map(function (row) { return +row[column]; })
+      .filter(function (value) { return !isNaN(value); });
 
     var min = d3.min(values);
     var max = d3.max(values);
@@ -848,12 +1243,12 @@ function renderTableInto(container, data, options) {
   var rowCount = Math.min(options.rowCount || data.length, data.length);
   var rows = data.slice(0, rowCount);
 
-  var headerHtml = headers.map(function(header) {
+  var headerHtml = headers.map(function (header) {
     return "<th>" + header + "</th>";
   }).join("");
 
-  var rowsHtml = rows.map(function(row) {
-    var cells = headers.map(function(header) {
+  var rowsHtml = rows.map(function (row) {
+    var cells = headers.map(function (header) {
       var value = row[header];
       return "<td>" + (value !== undefined ? value : "") + "</td>";
     }).join("");
@@ -869,8 +1264,8 @@ function renderTableInto(container, data, options) {
 
   var tableHtml = ""
     + "<table class='data-table'>"
-    +   "<thead><tr>" + headerHtml + "</tr></thead>"
-    +   "<tbody>" + rowsHtml + "</tbody>"
+    + "<thead><tr>" + headerHtml + "</tr></thead>"
+    + "<tbody>" + rowsHtml + "</tbody>"
     + "</table>"
     + "<p class='text-muted small-text'>" + note + "</p>";
 
@@ -882,14 +1277,33 @@ function renderCurrentDataPreview() {
     currentDataPreview
       .classed("is-hidden", !currentPreviewVisible)
       .html("<p class='text-muted'>現在のデータが読み込まれていません。</p>");
+    renderSampleDataPreview(null, currentDatasetName);
     return;
   }
 
   renderTableInto(currentDataPreview, rawData, {
     rowCount: CURRENT_PREVIEW_ROW_COUNT,
     emptyMessage: "現在のデータが読み込まれていません。",
-    note: function(shownRows, totalRows) {
+    note: function (shownRows, totalRows) {
       return "先頭 " + shownRows + " 行（" + currentDatasetName + " ／ 全 " + totalRows + " 行）を表示しています。";
+    }
+  });
+
+  renderSampleDataPreview(rawData, currentDatasetName);
+}
+
+function renderSampleDataPreview(data, datasetLabel) {
+  if (!data || !data.length) {
+    sampleDataPreview.html("<p class='text-muted'>サンプルデータがありません。</p>");
+    return;
+  }
+
+  renderTableInto(sampleDataPreview, data, {
+    rowCount: PREVIEW_ROW_COUNT,
+    emptyMessage: "サンプルデータがありません。",
+    note: function (shownRows, totalRows) {
+      var name = datasetLabel || currentDatasetName || "サンプルデータ";
+      return "先頭 " + shownRows + " 行（" + name + " ／ 全 " + totalRows + " 行）を表示しています。";
     }
   });
 }
@@ -943,7 +1357,7 @@ function resetToSampleData() {
   }
 
   loadDataset(cloneDataset(originalData), {
-    label: "サンプルデータ",
+    label: (currentMap && currentMap.name ? currentMap.name + " " : "") + "サンプルデータ",
     isSample: true,
     defaultToNone: true,
     preserveField: false
@@ -955,9 +1369,9 @@ function resetToSampleData() {
 }
 
 function cloneDataset(data) {
-  return (data || []).map(function(row) {
+  return (data || []).map(function (row) {
     var copy = {};
-    Object.keys(row).forEach(function(key) {
+    Object.keys(row).forEach(function (key) {
       copy[key] = row[key];
     });
     return copy;
@@ -990,7 +1404,7 @@ function downloadCurrentPng() {
   var svgBlob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
   var url = URL.createObjectURL(svgBlob);
   var image = new Image();
-  image.onload = function() {
+  image.onload = function () {
     var canvas = document.createElement("canvas");
     canvas.width = dims.width;
     canvas.height = dims.height;
@@ -999,14 +1413,14 @@ function downloadCurrentPng() {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(image, 0, 0);
     URL.revokeObjectURL(url);
-    canvas.toBlob(function(blob) {
+    canvas.toBlob(function (blob) {
       if (blob) {
         triggerDownload(blob, getDownloadFilename("png"));
       }
       setButtonLoading(downloadPngButton, false);
     }, "image/png");
   };
-  image.onerror = function(error) {
+  image.onerror = function (error) {
     console.error("PNG 生成中にエラーが発生しました。", error);
     URL.revokeObjectURL(url);
     setButtonLoading(downloadPngButton, false);
@@ -1027,6 +1441,23 @@ function downloadCurrentDatasetCsv() {
   } catch (error) {
     console.error(error);
     setUploadStatus("CSV の生成に失敗しました。", "danger");
+  }
+}
+
+function downloadSampleDataset() {
+  if (!originalData || !originalData.length) {
+    setUploadStatus("サンプルデータがありません。", "danger");
+    return;
+  }
+  try {
+    var csvContent = d3.csvFormat(originalData);
+    var blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
+    var filename = slugify(currentMap && currentMap.name ? currentMap.name : "sample");
+    triggerDownload(blob, (filename || "sample") + ".csv");
+    setUploadStatus("サンプルCSV をダウンロードしました。", "success");
+  } catch (error) {
+    console.error(error);
+    setUploadStatus("サンプルCSV の生成に失敗しました。", "danger");
   }
 }
 
@@ -1181,17 +1612,17 @@ function renderLegend(colorScale, minValue, maxValue, legendBoundaries) {
     .attr("class", "legend-scale")
     .attr("transform", "translate(0," + barOffsetTop + ")")
     .call(legend);
-  
+
   legendScaleGroup.selectAll("rect.swatch")
     .attr("stroke", "#cccccc")
     .attr("stroke-width", 1)
     .attr("shape-rendering", "crispEdges");
-  
+
   var legendCells = legendScaleGroup.selectAll(".cell");
   legendCells.select("text").remove();
 
   var legendExtents = getLegendExtents(colorScale, minValue, maxValue, legendBoundaries);
-  legendCells.each(function(d, i) {
+  legendCells.each(function (d, i) {
     var cell = d3.select(this);
     var rect = cell.select("rect");
     var rectX = parseFloat(rect.attr("x")) || 0;
@@ -1271,7 +1702,7 @@ function clearLegend() {
 
 function getLegendExtents(colorScale, fallbackMin, fallbackMax, legendBoundaries) {
   if (legendBoundaries && legendBoundaries.length) {
-    var extents = legendBoundaries.map(function(boundary, index) {
+    var extents = legendBoundaries.map(function (boundary, index) {
       var high = legendBoundaries[index + 1] != null ? legendBoundaries[index + 1] : fallbackMax;
       return [
         boundary != null ? boundary : fallbackMin,
@@ -1291,7 +1722,7 @@ function getLegendExtents(colorScale, fallbackMin, fallbackMax, legendBoundaries
   if (!colors.length) {
     return [];
   }
-  var extents = colors.map(function(color) {
+  var extents = colors.map(function (color) {
     var extent = colorScale.invertExtent ? colorScale.invertExtent(color) : null;
     var low = extent && extent[0] != null ? extent[0] : fallbackMin;
     var high = extent && extent[1] != null ? extent[1] : fallbackMax;
@@ -1315,8 +1746,8 @@ function augmentWithRankings(data) {
   if (!numericColumns.length) {
     return;
   }
-  numericColumns.forEach(function(column) {
-    var entries = data.map(function(row) {
+  numericColumns.forEach(function (column) {
+    var entries = data.map(function (row) {
       var value = +row[column];
       return {
         row: row,
@@ -1324,7 +1755,7 @@ function augmentWithRankings(data) {
       };
     });
 
-    entries.sort(function(a, b) {
+    entries.sort(function (a, b) {
       var aNull = a.value === null;
       var bNull = b.value === null;
       if (aNull && bNull) {
@@ -1341,7 +1772,7 @@ function augmentWithRankings(data) {
 
     var lastValue = null;
     var rank = 0;
-    entries.forEach(function(entry, index) {
+    entries.forEach(function (entry, index) {
       if (entry.value === null) {
         entry.row[getRankingColumnKey(column)] = "";
         return;
@@ -1361,7 +1792,7 @@ function selectDefaultField(fields, preferredKey, defaultToNone) {
 
   var match = null;
   if (preferredKey) {
-    match = fields.find(function(f) {
+    match = fields.find(function (f) {
       return f.key === preferredKey;
     });
   }
@@ -1374,9 +1805,12 @@ function selectDefaultField(fields, preferredKey, defaultToNone) {
     return fields[0];
   }
 
-  var firstNumeric = fields.find(function(f) {
+  var firstNumeric = fields.find(function (f) {
     return f.id !== "none";
   });
 
   return firstNumeric || fields[0];
 }
+
+// Bootstrap
+loadMapOptions();
