@@ -451,6 +451,13 @@ var proj = d3.geoMercator()
       return field && field.key ? +d.properties[field.key] : 1;
     });
 
+function clearMapGraphics() {
+  layer.select("#states").selectAll("path").remove();
+  states = layer.select("#states").selectAll("path");
+  stateLabelsGroup.selectAll("text").remove();
+  clearLegend();
+}
+
 function updateMapSelectionLabel(option) {
   var text = "";
   if (option) {
@@ -492,6 +499,7 @@ function changeMap(mapId, options) {
   mapSelect.property("value", currentMap.id);
   updateMapSelectionLabel(currentMap);
   setKeyColumn(currentMap.keyLabel || "地域名");
+  clearMapGraphics();
   stat.text("地図を読み込み中...").classed("empty", false);
   isMapLoading = true;
 
