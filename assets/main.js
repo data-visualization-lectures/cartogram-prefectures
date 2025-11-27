@@ -897,7 +897,7 @@ function update() {
   }
 
   // normalize the scale to positive numbers
-  var scale = d3.scaleLinear()
+  var scale = d3.scaleSqrt()
     .domain([lo, hi])
     .range([1, 1000]);
 
