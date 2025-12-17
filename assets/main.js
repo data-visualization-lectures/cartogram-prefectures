@@ -652,8 +652,8 @@ function renderStateLabels() {
   });
 
   var labels = stateLabelsGroup.selectAll("text")
-    .data(states.data(), function (d) {
-      return getFeatureLabel(d);
+    .data(states.data(), function (d, i) {
+      return getFeatureLabel(d) || i;
     });
 
   labels.exit().remove();
