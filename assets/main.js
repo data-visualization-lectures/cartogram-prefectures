@@ -2097,7 +2097,7 @@ function restoreProjectState(state) {
         legendUnitInput.property("value", legendUnit);
       }
       if (s.showLabels !== undefined) {
-        showLabelsToggle.property("checked", s.showLabels);
+        showLabelsToggle.property("checked", s.showLabels).on("change")();
       }
       if (s.displayMode) {
         setDisplayMode(s.displayMode);
