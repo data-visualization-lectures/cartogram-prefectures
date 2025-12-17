@@ -2097,7 +2097,7 @@ function restoreProjectState(state) {
         legendUnitInput.property("value", legendUnit);
       }
       if (s.showLabels !== undefined) {
-        showLabelsToggle.property("checked", s.showLabels).on("change")();
+        showLabelsToggle.property("checked", s.showLabels);
       }
       if (s.displayMode) {
         setDisplayMode(s.displayMode);
@@ -2112,7 +2112,6 @@ function restoreProjectState(state) {
     }
 
     updateFieldSelection();
-    renderStateLabels();
     setUploadStatus("プロジェクト状態を復元しました。", "success");
   };
 
