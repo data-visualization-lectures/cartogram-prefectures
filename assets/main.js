@@ -950,6 +950,7 @@ function update() {
       return [getFeatureLabel(d), displayValue].join(": ");
     });
 
+  var transitioning = 0;
   joined.transition()
     .duration(750)
     .ease(d3.easeLinear)
@@ -958,13 +959,19 @@ function update() {
       var colorValue = currentMode === "ranking" ? getRankingValue(d) : rawValue;
       return isNaN(colorValue) ? "#f0f0f0" : color(colorValue);
     })
-    .attr("d", carto.path);
+    .attr("d", carto.path)
+    .on("start", function () { transitioning++; })
+    .on("end", function () {
+      transitioning--;
+      if (transitioning === 0) {
+        renderStateLabels();
+      }
+    });
 
   states = joined;
 
+  // Immediate render (might be initially off-position)
   renderStateLabels();
-  // Ensure labels are re-rendered after transition
-  setTimeout(renderStateLabels, 800);
   renderLegend(color, legendMin, legendMax, currentLegendBoundaries);
 
   var delta = (Date.now() - start) / 1000;
