@@ -20,11 +20,21 @@
 
 <body>
   <main class="page container-fluid">
-    <section class="card hero-card">
-      <h1>都道府県地図カルトグラム</h1>
-      <p>
-        都道府県別データを CSV でアップロードして、面積をデータ値に比例させたカルトグラムをブラウザだけで生成できます。
-      </p>
+    <section class="card hero-card"
+      style="display: flex; flex-direction: row; justify-content: space-between; align-items: center; gap: 1rem;">
+      <div>
+        <h1>都道府県地図カルトグラム</h1>
+        <p style="margin-bottom: 0;">
+          都道府県別データを CSV でアップロードして、面積をデータ値に比例させたカルトグラムをブラウザだけで生成できます。
+        </p>
+      </div>
+      <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
+        <label class="btn btn-secondary">
+          設定ファイル読込 (JSON)
+          <input type="file" id="load-project-input" accept=".json,application/json" style="display: none;">
+        </label>
+        <button class="btn btn-secondary" id="download-project-btn" type="button">プロジェクト保存 (JSON)</button>
+      </div>
     </section>
 
     <div class="layout">
@@ -39,12 +49,7 @@
         </div>
         <div class="panel-header">
           <h2>データ管理</h2>
-          <div class="button-row right-align" style="margin-top: 0.5rem;">
-            <label class="btn btn-tertiary btn-sm">
-              設定ファイル読込 (JSON)
-              <input type="file" id="load-project-input" accept=".json,application/json" style="display: none;">
-            </label>
-          </div>
+
           <p>
             CSV のキー列（選択した地図の名称列）を基準に、他の列を指標として利用します。アップロード後に内容を確認してからマップに適用できます。
           </p>
@@ -152,7 +157,7 @@
           <svg id="map" viewBox="0 0 800 800" preserveAspectRatio="xMidYMid meet"></svg>
         </div>
         <div class="button-row stretch download-row">
-          <button class="btn btn-secondary" id="download-project-btn" type="button">プロジェクト保存 (JSON)</button>
+
           <button class="btn btn-secondary" id="download-svg-btn" type="button">SVGダウンロード</button>
           <button class="btn btn-secondary" id="download-png-btn" type="button">PNGダウンロード</button>
         </div>
