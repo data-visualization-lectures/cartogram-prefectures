@@ -161,7 +161,7 @@ var fileInput = d3.select("#file-input"),
   downloadSvgButton = d3.select("#download-svg-btn"),
   downloadPngButton = d3.select("#download-png-btn"),
   downloadProjectButton = d3.select("#download-project-btn"),
-  loadProjectInput = d3.select("#load-project-input"),
+  loadProjectButton = d3.select("#load-project-btn"),
   colorSchemeSelect = d3.select("#color-scheme"),
   legendCellsSelect = d3.select("#legend-cells"),
   legendUnitInput = d3.select("#legend-unit"),
@@ -409,8 +409,8 @@ toggleCurrentPreviewButton.on("click", function () {
 
 downloadSvgButton.on("click", downloadCurrentSvg);
 downloadPngButton.on("click", downloadCurrentPng);
-downloadProjectButton.on("click", saveProjectState);
-loadProjectInput.on("change", loadProjectState);
+downloadProjectButton.on("click", saveProjectToCloud);
+loadProjectButton.on("click", openProjectListModal);
 downloadDataButton.on("click", downloadCurrentDatasetCsv);
 downloadSampleButton.on("click", downloadSampleDataset);
 showLabelsToggle.on("change", renderStateLabels);
@@ -2009,15 +2009,29 @@ function selectDefaultField(fields, preferredKey, defaultToNone) {
 // Bootstrap
 loadMapOptions();
 
-function saveProjectState() {
+function saveProjectToCloud() {
   if (!rawData || !rawData.length) {
     alert("保存するデータがありません。");
     return;
   }
 
-  var state = {
-    version: 1,
-    timestamp: new Date().toISOString(),
+  var defaultName = currentDatasetName || "名称未設定";
+  var fieldName = (field && field.name && field.id !== "none") ? field.name : "データ未選択";
+  var modeName = currentMode === "ranking" ? "ランキング" : "実数";
+  var dateStr = d3.timeFormat("%y%m%d")(new Date());
+  var suggestedName = "日本_" + fieldName + "_" + modeName + "_" + dateStr;
+
+  var projectName = prompt("プロジェクト名を入力してください", suggestedName);
+  if (projectName === null) return;
+
+  setButtonLoading(saveProjectButton || downloadProjectButton, true);
+
+  var saveData = {
+    version: "1.0",
+    timestamp: Date.now(),
+    meta: {
+      datasetName: currentDatasetName
+    },
     mapId: currentMap ? currentMap.id : null,
     data: rawData,
     settings: {
@@ -2030,37 +2044,75 @@ function saveProjectState() {
     }
   };
 
-  try {
-    var jsonStr = JSON.stringify(state, null, 2);
-    var blob = new Blob([jsonStr], { type: "application/json" });
-    var filename = (currentMap ? currentMap.id : "project") + "_state.json";
-    triggerDownload(blob, filename);
-  } catch (e) {
-    console.error(e);
-    alert("保存中にエラーが発生しました。");
-  }
+  getThumbnailBlob().then(function (thumbnailBlob) {
+    CloudApi.saveProject(saveData, projectName, thumbnailBlob)
+      .then(function () {
+        alert("プロジェクト「" + projectName + "」を保存しました。");
+        setButtonLoading(saveProjectButton || downloadProjectButton, false);
+      })
+      .catch(function (err) {
+        console.error(err);
+        alert("保存に失敗しました: " + err.message);
+        setButtonLoading(saveProjectButton || downloadProjectButton, false);
+      });
+  });
 }
 
-function loadProjectState() {
-  var file = this.files && this.files[0];
-  if (!file) {
-    return;
-  }
+function openProjectListModal() {
+  var modalEl = document.getElementById('projectListModal');
+  var modal = new bootstrap.Modal(modalEl);
+  modal.show();
 
-  var reader = new FileReader();
-  reader.onload = function (e) {
-    try {
-      var json = JSON.parse(e.target.result);
-      restoreProjectState(json);
-    } catch (err) {
+  var listGroup = d3.select("#project-list-group");
+  listGroup.html('<p class="text-center text-muted p-4">読み込み中...</p>');
+
+  CloudApi.getProjects()
+    .then(function (projects) {
+      if (!projects || projects.length === 0) {
+        listGroup.html('<p class="text-center text-muted p-4">保存されたプロジェクトはありません。</p>');
+        return;
+      }
+
+      listGroup.html("");
+
+      var items = listGroup.selectAll("button")
+        .data(projects)
+        .enter()
+        .append("button")
+        .attr("class", "list-group-item list-group-item-action d-flex justify-content-between align-items-center")
+        .attr("type", "button")
+        .on("click", function (d) {
+          if (!confirm("「" + d.name + "」を読み込みますか？現在の作業内容は上書きされます。")) {
+            return;
+          }
+          var btn = d3.select(this);
+          btn.text("読み込み中...").property("disabled", true);
+
+          CloudApi.loadProject(d.id)
+            .then(function (projectData) {
+              restoreProjectState(projectData);
+              modal.hide();
+            })
+            .catch(function (err) {
+              console.error(err);
+              alert("読み込みに失敗しました: " + err.message);
+              btn.text(d.name).property("disabled", false);
+            });
+        });
+
+      items.append("div")
+        .html(function (d) {
+          var dateStr = d.updated_at ? new Date(d.updated_at).toLocaleString() : "";
+          return '<div class="fw-bold">' + (d.name || "名称未設定") + '</div>' +
+            '<small class="text-muted">' + dateStr + '</small>';
+        });
+    })
+    .catch(function (err) {
       console.error(err);
-      alert("ファイルの読み込みに失敗しました。形式が正しいか確認してください。");
-    } finally {
-      loadProjectInput.node().value = "";
-    }
-  };
-  reader.readAsText(file);
+      listGroup.html('<p class="text-center text-danger p-4">プロジェクト一覧の取得に失敗しました。<br>' + err.message + '</p>');
+    });
 }
+
 
 function restoreProjectState(state) {
   if (!state || !state.data) {
@@ -2125,4 +2177,35 @@ function restoreProjectState(state) {
   } else {
     doRestore();
   }
+}
+
+function getThumbnailBlob() {
+  return new Promise(function (resolve, reject) {
+    var svgNode = document.getElementById("map");
+    if (!svgNode) return resolve(null);
+
+    var serialized = serializeSvg(svgNode);
+    var dims = extractSvgDimensions(svgNode);
+    var svgBlob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
+    var url = URL.createObjectURL(svgBlob);
+    var image = new Image();
+    image.onload = function () {
+      var canvas = document.createElement("canvas");
+      canvas.width = dims.width;
+      canvas.height = dims.height;
+      var ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(function (blob) {
+        resolve(blob);
+      }, "image/png");
+    };
+    image.onerror = function (e) {
+      console.warn("Thumbnail generation failed", e);
+      resolve(null);
+    };
+    image.src = url;
+  });
 }

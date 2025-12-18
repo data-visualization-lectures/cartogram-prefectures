@@ -78,6 +78,7 @@ const jsFilesToConcat = [
   'vendor/d3-scale-chromatic.v1.min.js',
   'vendor/topojson.v2.min.js',
   'assets/d3-legend.min.js',
+  'assets/cloud-api.js',
   'assets/topogram.js',
   'assets/main.js'
 ];
