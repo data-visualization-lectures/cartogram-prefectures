@@ -2019,7 +2019,8 @@ function saveProjectToCloud() {
   var fieldName = (field && field.name && field.id !== "none") ? field.name : "データ未選択";
   var modeName = currentMode === "ranking" ? "ランキング" : "実数";
   var dateStr = d3.timeFormat("%y%m%d")(new Date());
-  var suggestedName = "日本_" + fieldName + "_" + modeName + "_" + dateStr;
+  var mapName = (currentMap && currentMap.name) ? currentMap.name : "日本";
+  var suggestedName = mapName + "_" + fieldName + "_" + modeName + "_" + dateStr;
 
   var projectName = prompt("プロジェクト名を入力してください", suggestedName);
   if (projectName === null) return;
