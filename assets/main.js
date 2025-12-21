@@ -2249,7 +2249,7 @@ function showToast(message, type) {
   }
 
   var toast = document.createElement("div");
-  toast.className = "toast toast-" + (type || "info");
+  toast.className = "custom-toast toast-" + (type || "info");
 
   var iconHtml = "";
   if (type === "success") {
