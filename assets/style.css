@@ -545,9 +545,9 @@ path.state:hover {
 /* Toast Notifications */
 .toast-container {
   position: fixed;
-  top: 20px;
+  top: 100px; /* Moved down to avoid common header */
   right: 20px;
-  z-index: 9999;
+  z-index: 2147483647; /* Max z-index */
   display: flex;
   flex-direction: column;
   gap: 10px;
