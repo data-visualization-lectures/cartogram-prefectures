@@ -4,7 +4,8 @@ var CloudApi = (function () {
     var BUCKET_NAME = 'user_projects';
 
     // Auth Key from _temp/dataviz-auth-client.js
-    var SUPABASE_URL = "https://vebhoeiltxspsurqoxvl.supabase.co";
+    // Base URL for API requests (set by dataviz-auth-client.js)
+    var API_URL = window.datavizApiUrl || "https://api.dataviz.jp";
     var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZlYmhvZWlsdHhzcHN1cnFveHZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwNTY4MjMsImV4cCI6MjA4MDYzMjgyM30.5uf-D07Hb0JxL39X9yQ20P-5gFc1CRMdKWhDySrNZ0E";
 
     async function getSupabaseConfig() {
@@ -23,7 +24,7 @@ var CloudApi = (function () {
         }
 
         return {
-            supabaseUrl: SUPABASE_URL,
+            apiUrl: API_URL,
             supabaseKey: SUPABASE_ANON_KEY,
             accessToken: session.access_token,
             user: session.user
@@ -35,7 +36,7 @@ var CloudApi = (function () {
         try {
             var config = await getSupabaseConfig();
             // Use API endpoint as per specification
-            var endpoint = config.supabaseUrl + "/api/projects?app=" + APP_NAME;
+            var endpoint = config.apiUrl + "/api/projects?app=" + APP_NAME;
 
             var response = await fetch(endpoint, {
                 method: 'GET',
@@ -110,11 +111,11 @@ var CloudApi = (function () {
 
             // If projectData has an id, we should use PUT to update
             var isUpdate = projectData.id ? true : false;
-            var endpoint = config.supabaseUrl + "/api/projects";
+            var endpoint = config.apiUrl + "/api/projects";
             var method = 'POST';
 
             if (isUpdate) {
-                endpoint = config.supabaseUrl + "/api/projects/" + projectData.id;
+                endpoint = config.apiUrl + "/api/projects/" + projectData.id;
                 method = 'PUT';
                 // For update, only send changed fields
                 delete requestBody.app_name; // app_name doesn't change
@@ -150,7 +151,7 @@ var CloudApi = (function () {
             var config = await getSupabaseConfig();
 
             // Use API endpoint to get project data
-            var endpoint = config.supabaseUrl + "/api/projects/" + projectId;
+            var endpoint = config.apiUrl + "/api/projects/" + projectId;
 
             var response = await fetch(endpoint, {
                 method: 'GET',
@@ -177,7 +178,7 @@ var CloudApi = (function () {
     function getThumbnailUrl(projectId) {
         // Returns the URL for fetching thumbnail image
         // Note: This requires authentication, so it should be used with fetch + Authorization header
-        return SUPABASE_URL + "/api/projects/" + projectId + "/thumbnail";
+        return API_URL + "/api/projects/" + projectId + "/thumbnail";
     }
 
     return {

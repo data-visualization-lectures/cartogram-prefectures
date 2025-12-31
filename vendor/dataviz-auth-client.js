@@ -15,65 +15,66 @@ const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1年
  * クッキー操作ヘルパー
  */
 const COOKIE_DOMAIN = (() => {
-  const hostname = window.location.hostname;
-  if (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname.match(/^(\d{1,3}\.){3}\d{1,3}$/)
-  ) {
-    return null;
-  }
-  return ".dataviz.jp";
+    const hostname = window.location.hostname;
+    if (
+        hostname === "localhost" ||
+        hostname === "127.0.0.1" ||
+        hostname.match(/^(\d{1,3}\.){3}\d{1,3}$/)
+    ) {
+        return null;
+    }
+    return ".dataviz.jp";
 })();
 
 const cookieStorage = {
-  getItem: (key) => {
-    const cookies = document.cookie
-      .split(";")
-      .map((c) => c.trim())
-      .filter(Boolean);
+    getItem: (key) => {
+        const cookies = document.cookie
+            .split(";")
+            .map((c) => c.trim())
+            .filter(Boolean);
 
-    for (const c of cookies) {
-      const [k, ...rest] = c.split("=");
-      if (k === key) {
-        const rawVal = decodeURIComponent(rest.join("="));
-        try { return JSON.parse(rawVal); } catch (e) { }
-        try {
-          let toDecode = rawVal.startsWith('base64-') ? rawVal.slice(7) : rawVal;
-          const base64Standard = toDecode.replace(/-/g, '+').replace(/_/g, '/');
-          return JSON.parse(atob(base64Standard));
-        } catch (e) { return null; }
-      }
-    }
-    return null;
-  },
-  setItem: (key, value) => {
-    let encoded;
-    try { encoded = btoa(value); } catch (e) { return; }
-    let cookieStr = `${key}=${encoded}; Max-Age=${COOKIE_MAX_AGE}; Path=/; SameSite=None; Secure`;
-    if (COOKIE_DOMAIN) cookieStr += `; Domain=${COOKIE_DOMAIN}`;
-    document.cookie = cookieStr;
-  },
-  removeItem: (key) => {
-    let cookieStr = `${key}=; Max-Age=0; Path=/; SameSite=None; Secure`;
-    if (COOKIE_DOMAIN) cookieStr += `; Domain=${COOKIE_DOMAIN}`;
-    document.cookie = cookieStr;
-  },
+        for (const c of cookies) {
+            const [k, ...rest] = c.split("=");
+            if (k === key) {
+                const rawVal = decodeURIComponent(rest.join("="));
+                try { return JSON.parse(rawVal); } catch (e) { }
+                try {
+                    let toDecode = rawVal.startsWith('base64-') ? rawVal.slice(7) : rawVal;
+                    const base64Standard = toDecode.replace(/-/g, '+').replace(/_/g, '/');
+                    return JSON.parse(atob(base64Standard));
+                } catch (e) { return null; }
+            }
+        }
+        return null;
+    },
+    setItem: (key, value) => {
+        let encoded;
+        try { encoded = btoa(value); } catch (e) { return; }
+        let cookieStr = `${key}=${encoded}; Max-Age=${COOKIE_MAX_AGE}; Path=/; SameSite=None; Secure`;
+        if (COOKIE_DOMAIN) cookieStr += `; Domain=${COOKIE_DOMAIN}`;
+        document.cookie = cookieStr;
+    },
+    removeItem: (key) => {
+        let cookieStr = `${key}=; Max-Age=0; Path=/; SameSite=None; Secure`;
+        if (COOKIE_DOMAIN) cookieStr += `; Domain=${COOKIE_DOMAIN}`;
+        document.cookie = cookieStr;
+    },
 };
 
 // ---- Supabase クライアント作成 ----
 const supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: {
-    storage: cookieStorage,
-    storageKey: AUTH_COOKIE_NAME,
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
+    auth: {
+        storage: cookieStorage,
+        storageKey: AUTH_COOKIE_NAME,
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+    },
 }) : null;
 // 外部公開（リファクタリング対応）
 if (supabase) {
-  window.datavizSupabase = supabase;
+    window.datavizSupabase = supabase;
+    window.datavizApiUrl = API_BASE_URL;
 }
 
 
@@ -81,27 +82,27 @@ if (supabase) {
 // UI Component: 共通ヘッダー (Web Component Standard)
 // =========================================================================
 class DatavizGlobalHeader extends HTMLElement {
-  constructor() {
-    super();
-    this.attachShadow({ mode: 'open' });
-    this.state = {
-      isLoading: true,
-      user: null
-    };
-  }
+    constructor() {
+        super();
+        this.attachShadow({ mode: 'open' });
+        this.state = {
+            isLoading: true,
+            user: null
+        };
+    }
 
-  connectedCallback() {
-    this.render();
-  }
+    connectedCallback() {
+        this.render();
+    }
 
-  updateState(newState) {
-    this.state = { ...this.state, ...newState };
-    this.render();
-  }
+    updateState(newState) {
+        this.state = { ...this.state, ...newState };
+        this.render();
+    }
 
-  // スタイル定義
-  getStyles() {
-    return `
+    // スタイル定義
+    getStyles() {
+        return `
       :host {
         all: initial; /* 親スタイルの影響をリセット */
         display: block;
@@ -187,35 +188,35 @@ class DatavizGlobalHeader extends HTMLElement {
         .dv-user-email { display: none; }
       }
     `;
-  }
+    }
 
-  render() {
-    const { isLoading, user } = this.state;
+    render() {
+        const { isLoading, user } = this.state;
 
-    // アカウントページのURL
-    const accountUrl = `${AUTH_APP_URL}/account`;
-    const loginUrl = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${encodeURIComponent(window.location.href)}`;
+        // アカウントページのURL
+        const accountUrl = `${AUTH_APP_URL}/account`;
+        const loginUrl = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${encodeURIComponent(window.location.href)}`;
 
-    let rightContent = '';
+        let rightContent = '';
 
-    if (isLoading) {
-      rightContent = `<span class="dv-loading">Loading...</span>`;
-    } else if (user) {
-      const email = user.email || 'User';
-      rightContent = `
+        if (isLoading) {
+            rightContent = `<span class="dv-loading">Loading...</span>`;
+        } else if (user) {
+            const email = user.email || 'User';
+            rightContent = `
         <div class="dv-user-info">
           <a href="${accountUrl}" class="dv-user-email" title="${email}">${email}</a>
         </div>
         <button class="dv-btn" id="dv-logout-btn">Log out</button>
       `;
-    } else {
-      rightContent = `
+        } else {
+            rightContent = `
         <span style="font-size:12px; color:#888;">Not logged in</span>
         <a href="${loginUrl}" class="dv-btn dv-btn-primary">Log in</a>
       `;
-    }
+        }
 
-    this.shadowRoot.innerHTML = `
+        this.shadowRoot.innerHTML = `
       <style>${this.getStyles()}</style>
       <div class="dv-header">
         <div class="dv-left">
@@ -227,17 +228,17 @@ class DatavizGlobalHeader extends HTMLElement {
       </div>
     `;
 
-    // イベントリスナーの再結合 (Shadow DOM再描画後)
-    const logoutBtn = this.shadowRoot.getElementById('dv-logout-btn');
-    if (logoutBtn) {
-      logoutBtn.addEventListener('click', async () => {
-        if (confirm('ログアウトしますか？')) {
-          await supabase.auth.signOut();
-          window.location.reload();
+        // イベントリスナーの再結合 (Shadow DOM再描画後)
+        const logoutBtn = this.shadowRoot.getElementById('dv-logout-btn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', async () => {
+                if (confirm('ログアウトしますか？')) {
+                    await supabase.auth.signOut();
+                    window.location.reload();
+                }
+            });
         }
-      });
     }
-  }
 }
 customElements.define('dataviz-header', DatavizGlobalHeader);
 
@@ -247,16 +248,16 @@ customElements.define('dataviz-header', DatavizGlobalHeader);
 // =========================================================================
 
 function isAuthDebugMode() {
-  const params = new URLSearchParams(window.location.search);
-  return params.has("auth_debug");
+    const params = new URLSearchParams(window.location.search);
+    return params.has("auth_debug");
 }
 
 function performRedirect(url, reason) {
-  if (isAuthDebugMode()) {
-    console.warn(`[dataviz-auth-client] Redirect suppressed. Reason: ${reason} -> ${url}`);
-    return;
-  }
-  window.location.href = url;
+    if (isAuthDebugMode()) {
+        console.warn(`[dataviz-auth-client] Redirect suppressed. Reason: ${reason} -> ${url}`);
+        return;
+    }
+    window.location.href = url;
 }
 
 /**
@@ -264,45 +265,45 @@ function performRedirect(url, reason) {
  * @returns UserProfile object OR null (if unauthenticated/invalid)
  */
 async function verifyUserAccess(session) {
-  if (!session) {
-    const redirectTo = encodeURIComponent(window.location.href);
-    const signUpUrl = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${redirectTo}`;
-    performRedirect(signUpUrl, 'Unauthenticated');
-    return null;
-  }
-
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/me`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${session.access_token}` },
-      credentials: "include", // Cookie送信
-    });
-    if (!res.ok) throw new Error(`Status ${res.status}`);
-
-    const profile = await res.json();
-
-    // サブスクチェック
-    const sub = profile.subscription || {};
-    const status = sub.status || "none";
-
-    // 「キャンセル済みだが期間内」は cancel_at_period_end で判断
-    const isCanceledButValid = sub.cancel_at_period_end;
-
-    const isActive = status === "active" || status === "trialing" || isCanceledButValid;
-
-    if (!isActive) {
-      performRedirect(AUTH_APP_URL, `Inactive Subscription (${status})`);
-      return null;
+    if (!session) {
+        const redirectTo = encodeURIComponent(window.location.href);
+        const signUpUrl = `${AUTH_APP_URL}/auth/sign-up?redirect_to=${redirectTo}`;
+        performRedirect(signUpUrl, 'Unauthenticated');
+        return null;
     }
 
-    // ユーザー情報にemailが含まれていない場合があるので、Sessionからマージ
-    return { ...profile, email: session.user.email };
+    try {
+        const res = await fetch(`${API_BASE_URL}/api/me`, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${session.access_token}` },
+            credentials: "include", // Cookie送信
+        });
+        if (!res.ok) throw new Error(`Status ${res.status}`);
 
-  } catch (err) {
-    console.error("[dataviz-auth-client] Profile check failed", err);
-    performRedirect(AUTH_APP_URL, 'Profile Error');
-    return null;
-  }
+        const profile = await res.json();
+
+        // サブスクチェック
+        const sub = profile.subscription || {};
+        const status = sub.status || "none";
+
+        // 「キャンセル済みだが期間内」は cancel_at_period_end で判断
+        const isCanceledButValid = sub.cancel_at_period_end;
+
+        const isActive = status === "active" || status === "trialing" || isCanceledButValid;
+
+        if (!isActive) {
+            performRedirect(AUTH_APP_URL, `Inactive Subscription (${status})`);
+            return null;
+        }
+
+        // ユーザー情報にemailが含まれていない場合があるので、Sessionからマージ
+        return { ...profile, email: session.user.email };
+
+    } catch (err) {
+        console.error("[dataviz-auth-client] Profile check failed", err);
+        performRedirect(AUTH_APP_URL, 'Profile Error');
+        return null;
+    }
 }
 
 
@@ -311,57 +312,57 @@ async function verifyUserAccess(session) {
 // =========================================================================
 
 async function initDatavizToolAuth() {
-  if (!supabase) {
-    console.error("[dataviz-auth-client] Supabase client missing.");
-    return;
-  }
-
-  // 1. UIの初期化・表示 (Web Component)
-  let headerEl = document.querySelector('dataviz-header');
-  if (!headerEl) {
-    headerEl = document.createElement('dataviz-header');
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => document.body.prepend(headerEl));
-    } else {
-      document.body.prepend(headerEl);
-    }
-  }
-
-  let isCheckDone = false;
-
-  const handleSession = async (session) => {
-    // URLパラメータ掃除
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const searchParams = new URLSearchParams(window.location.search);
-    if (searchParams.has("code") || hashParams.has("access_token")) {
-      window.history.replaceState({}, document.title, window.location.pathname);
+    if (!supabase) {
+        console.error("[dataviz-auth-client] Supabase client missing.");
+        return;
     }
 
-    if (!session) {
-      // 未ログイン
-      if (headerEl) headerEl.updateState({ isLoading: false, user: null });
-      await verifyUserAccess(null); // リダイレクト実行
-      return;
+    // 1. UIの初期化・表示 (Web Component)
+    let headerEl = document.querySelector('dataviz-header');
+    if (!headerEl) {
+        headerEl = document.createElement('dataviz-header');
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => document.body.prepend(headerEl));
+        } else {
+            document.body.prepend(headerEl);
+        }
     }
 
-    // ログイン済み -> 権限チェック
-    const profile = await verifyUserAccess(session);
-    if (profile) {
-      // 成功 -> UI更新
-      if (headerEl) headerEl.updateState({ isLoading: false, user: profile });
-    }
-    // 失敗時は verifyUserAccess 内でリダイレクトされる
-  };
+    let isCheckDone = false;
 
-  // authStateChange のみで判定（初期化タイミング問題を回避）
-  supabase.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'SIGNED_OUT') {
-      if (!isCheckDone) {
-        isCheckDone = true;
-      }
-      await handleSession(session);
-    }
-  });
+    const handleSession = async (session) => {
+        // URLパラメータ掃除
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const searchParams = new URLSearchParams(window.location.search);
+        if (searchParams.has("code") || hashParams.has("access_token")) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+
+        if (!session) {
+            // 未ログイン
+            if (headerEl) headerEl.updateState({ isLoading: false, user: null });
+            await verifyUserAccess(null); // リダイレクト実行
+            return;
+        }
+
+        // ログイン済み -> 権限チェック
+        const profile = await verifyUserAccess(session);
+        if (profile) {
+            // 成功 -> UI更新
+            if (headerEl) headerEl.updateState({ isLoading: false, user: profile });
+        }
+        // 失敗時は verifyUserAccess 内でリダイレクトされる
+    };
+
+    // authStateChange のみで判定（初期化タイミング問題を回避）
+    supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'SIGNED_OUT') {
+            if (!isCheckDone) {
+                isCheckDone = true;
+            }
+            await handleSession(session);
+        }
+    });
 }
 
 // 自動実行
