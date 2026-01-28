@@ -14,6 +14,10 @@ body {
   margin: 0;
 }
 
+dataviz-tool-header {
+  margin-top: 48px;
+}
+
 .page {
   width: 100%;
   max-width: none;
